@@ -1,4 +1,5 @@
 from math import gcd
+
 from random import randint
 from secrets import randbelow
 
@@ -57,11 +58,26 @@ class MatrixModP():
         
         return MatrixModP(self.prime, *product_values)
     
+    def __pow__(self, k):
+        k_binary = bin(k)
+        value = MatrixModP(self.prime, *IDENTITY_MATRIX)
+        
+        # Starts at 2 to omit the "0b" part of binary representation.
+        for digit in range(2, len(k_binary)):
+            value *= value # Squares no matter what the binary digit is.
+            if (k_binary[digit] == "1"): # Multiply by x when digit = 1.
+                value *= self
+        
+        return value
+    
     def __eq__(self, other):
         if (self.values == other.values):
             return True
         else:
             return False
+    
+    def change_val(self, index, new):
+        self.prime[index] = new
         
     def output(self):
         start = 0
@@ -83,19 +99,80 @@ class MatrixModP():
         adjusted = (calculation % self.prime)
         return adjusted
 
+# Procedure for creating matrix M:
+def GenerateM():
+    MATRIX_M_VALUES = []
+    for x in range(9):
+        MATRIX_M_VALUES.append(randbelow(PRIME_NUMBER))
+    return MatrixModP(PRIME_NUMBER, *MATRIX_M_VALUES)
 
-# xk and xk_tuple square-and-multiply algorithm for efficiency.
-def xk(self, k):
-    k_binary = bin(k)
-    value = MatrixModP(self.prime, *IDENTITY_MATRIX)
+# Procedure for creating matrices H_1 and H_2.
+def GenerateH():
+    DIAGONAL_MATRIX = [0, 0, 0, 0, -1, 0, 0, 0, -1]
+    for x in [4, 8]:
+        while (DIAGONAL_MATRIX[x] == -1):
+            toInsert = randbelow(PRIME_NUMBER)
+            if (toInsert**2 % PRIME_NUMBER != 1):
+                DIAGONAL_MATRIX[x] = toInsert
     
-    # Starts at 2 to omit the "0b" part of binary representation.
-    for digit in range(2, len(k_binary)):
-        value *= value # Squares no matter what the binary digit is.
-        if (k_binary[digit] == "1"): # Multiply by x when digit = 1.
-            value *= self
+    D = MatrixModP(PRIME_NUMBER, *DIAGONAL_MATRIX)
     
-    return value  
+    S_VALUES = [randbelow(PRIME_NUMBER) for i in range(9)]
+    S = MatrixModP(PRIME_NUMBER, *S_VALUES)
+    
+    while (S.determinant == 0):
+        S.change_val(0, randbelow(PRIME_NUMBER))
+    
+    return InverseMatrix(S) * D * S
+    
+
+def InverseMatrix(A):
+    (L, U) = LUDecomp(A)
+    
+    INV_MAT_COLUMNS = ([1, 0, 0], [0, 1, 0], [0, 0, 1])
+    col_1 = LUSolve(L, U, INV_MAT_COLUMNS[0])
+    col_2 = LUSolve(L, U, INV_MAT_COLUMNS[1])
+    col_3 = LUSolve(L, U, INV_MAT_COLUMNS[2])
+    
+    M_INV_VAL = [col_1[0], col_2[0], col_3[0],
+        col_1[1], col_2[1], col_3[1],
+        col_1[2], col_2[2], col_3[2]]
+
+    return MatrixModP(PRIME_NUMBER, *M_INV_VAL)
+    
+
+def LUDecomp(A):
+    A_VALS = A.values[:]
+    U_VALS = [A_VALS[0], -1, -1, 0, A_VALS[4], -1, 0, 0, A_VALS[8]]
+    L_VALS = [1, 0, 0, -1, 1, 0, -1, -1, 1]
+    
+    for k in range(3):
+        U_VALS[(k*3)+k] = A_VALS[(k*3)+k]
+        for i in range(k+1, 3):
+            L_VALS[(i*3)+k] = (A_VALS[(i*3)+k] * pow(U_VALS[(k*3)+k], -1, PRIME_NUMBER))
+            U_VALS[(k*3)+i] = A_VALS[(k*3)+i]
+        for i in range(k+1, 3):
+            for j in range(k+1, 3):
+                A_VALS[(i*3)+j] -= L_VALS[(i*3)+k] * U_VALS[(k*3)+j]
+
+    return (MatrixModP(PRIME_NUMBER, *L_VALS), MatrixModP(PRIME_NUMBER, *U_VALS))
+
+def LUSolve(L, U, b):
+    y = [1, 1, 1]
+    x = [1, 1, 1]
+    for i in range(3):
+        toSub = 0
+        for j in range(0, i):
+            toSub += (L.values[(i*3)+j]*y[j])
+        y[i] = b[i] - toSub
+    
+    for i in range(2, -1, -1):
+        toSub = 0
+        for j in range(i+1, 3):
+            toSub += (U.values[(i*3)+j]*x[j])
+        x[i] = (y[i] - toSub) * pow(U.values[(i*3)+i], -1, PRIME_NUMBER)
+    
+    return x
 
 # Precondition: "self" should be a 2-tuple with a matrix and tuple.
 #   At the beginning of the procedure, this is ((M, (H1, H2), k)
@@ -133,73 +210,19 @@ def semidirect_product(firstTuple, secondTuple):
 #                       PROTOCOL DESCRIPTION
 # ----------------------------------------------------------------------
 
+
 # STEP 1:
-# (i) Generating M, H1, H2:
-allCriteriaFit = False
+# (i) Generating M, H_1, H_2:
+M = GenerateM()
+H_1 = GenerateH()
+H_2 = GenerateH()
 
-while (allCriteriaFit == False):
-    allCriteriaFit = False
-    MATRIX_M_VALUES = []
-    MATRIX_H1_VALUES = []
-    MATRIX_H2_VALUES = []
-    
-    for x in range(9):
-        MATRIX_M_VALUES.append(randbelow(PRIME_NUMBER))
-        MATRIX_H1_VALUES.append(randbelow(PRIME_NUMBER))
-        MATRIX_H2_VALUES.append(randbelow(PRIME_NUMBER))
-
-    M = MatrixModP(PRIME_NUMBER, *MATRIX_M_VALUES)
-    H1 = MatrixModP(PRIME_NUMBER, *MATRIX_H1_VALUES)
-    H2 = MatrixModP(PRIME_NUMBER, *MATRIX_H2_VALUES)
-
-    # If M is not invertible, redo generation:
-    while (M.determinant() == 0):
-        MATRIX_M_VALUES = [] # Clears matrix.
-        for x in range(9):
-            MATRIX_M_VALUES.append(randbelow(PRIME_NUMBER))
-
-        M = MatrixModP(PRIME_NUMBER, *MATRIX_M_VALUES)
-        print("Failed at M determinant")
-
-    # If H is not invertible, redo generation:
-    while (H1.determinant() == 0):
-        MATRIX_H1_VALUES = []
-        for x in range(9):
-            MATRIX_H1_VALUES.append(randbelow(PRIME_NUMBER))
-            
-        H1 = MatrixModP(PRIME_NUMBER, *MATRIX_H1_VALUES)
-        print("Failed at H1 determinant")
-
-    while (H2.determinant() == 0):
-        MATRIX_H2_VALUES = []
-        for x in range(9):
-            MATRIX_H2_VALUES.append(randbelow(PRIME_NUMBER))
-            
-        H2 = MatrixModP(PRIME_NUMBER, *MATRIX_H2_VALUES)
-        print("Failed at H2 determinant")
-    
-    # Redoes generation of M and H1 or H2 if they are not invertible:
-    MH = M * H1
-    HM = H1 * M
-    if MH.values == HM.values:
-        print("Failed at H, M1 invertible")        
-        continue 
-    
-    MH = M * H2
-    HM = H2 * M
-    if MH.values == HM.values:
-        print("Failed at H, M2 invertible")                
-        continue 
-    
-    # Ensures order of H^(p+1)(p^2+p+1) != 0
-    orderCheckH1 = xk(H1, ((PRIME_NUMBER**2 + PRIME_NUMBER + 1) * (PRIME_NUMBER + 1)))
-    orderCheckH2 = xk(H2, ((PRIME_NUMBER**2 + PRIME_NUMBER + 1) * (PRIME_NUMBER + 1)))
-    
-    if (orderCheckH1.values != IDENTITY_MATRIX and orderCheckH2.values != IDENTITY_MATRIX):
-        print("Checks if identity matrix occurs") 
-        allCriteriaFit = True
-
-print("Finished generating M, H1, H2")
+for H in (H_1, H_2):
+    while (M * H == H * M):
+        M = GenerateM()
+        print("uh oh stinky")
+        
+print("Finished generating M, H_1, H_2")
 
 # (ii) Alice and Bob's private selections.
 #   Range of m and n, based on the magnitude of q.
@@ -222,13 +245,13 @@ while (gcd(m, PRIME_NUMBER - 1) != 1 or gcd(n, PRIME_NUMBER - 1) != 1):
 print("Finished generating m and n")
 
 # STEP 2: Alice calculates and sends A.
-AliceCalculation = xk_tuple((M, (H1, H2)), m)
+AliceCalculation = xk_tuple((M, (H_1, H_2)), m)
 A = AliceCalculation[0]
 
 print("Finished calculating A")
      
 # STEP 3: Bob calculates and sends B.
-BobCalculation = xk_tuple((M, (H1, H2)), n)
+BobCalculation = xk_tuple((M, (H_1, H_2)), n)
 B = BobCalculation[0]
 
 print("Finished calculating B")
@@ -246,7 +269,7 @@ K_B = BobKey[0]
 print("Finished calculating K_B")
 
 # STEP 6: Calculation of secret key K to confirm key generation works.
-KeyCalculation = xk_tuple((M, (H1, H2)), m + n)
+KeyCalculation = xk_tuple((M, (H_1, H_2)), m + n)
 K = KeyCalculation[0]
 
 print("Finished calculating K")
@@ -261,10 +284,10 @@ print("\nGenerated M:")
 M.output()
 
 print("\nGenerated H1:")
-H1.output()
+H_1.output()
 
 print("\nGenerated H2:")
-H2.output()
+H_2.output()
 
 print("\n------------")
 
@@ -277,9 +300,9 @@ K_B.output()
 print("\nShared Secret Key (K)")
 K.output()
 
+# Checks to see if the keys are equal to the actual keys.
 if (K_A == K):
     print("\nAlice's Key is equal to the Actual Key")
     
 if (K_B == K):
     print("Bob's Key is equal to the Actual Key")
-
